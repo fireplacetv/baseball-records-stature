@@ -5,3 +5,4 @@ processor/venv/
 processor/lahman/
 sources/*
 !sources/.gitkeep
+.claude/*
