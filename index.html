@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Baseball Record Stature</title>
+  <link rel="stylesheet" href="./assets/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>Baseball Record Stature</h1>
+  <p class="subtitle">How imposing was the all-time career record, year by year?</p>
+</header>
+
+<div id="controls">
+  <label for="stat-select">Stat:</label>
+  <select id="stat-select" aria-label="Select a statistic"></select>
+</div>
+
+<p id="status"></p>
+
+<main>
+
+  <section class="chart-section">
+    <h2>Career Record vs. Active Leader</h2>
+    <div class="chart-wrap" id="chart-area-wrap">
+      <canvas id="chart-area"></canvas>
+    </div>
+  </section>
+
+  <section class="chart-section">
+    <h2>Stature of Record &mdash; Cumulative Gap</h2>
+    <div class="chart-wrap" id="chart-gap-wrap">
+      <canvas id="chart-gap"></canvas>
+    </div>
+  </section>
+
+  <section class="chart-section">
+    <h2>Climb Over Previous Record</h2>
+    <div class="chart-wrap" id="chart-climb-wrap">
+      <canvas id="chart-climb"></canvas>
+    </div>
+  </section>
+
+  <section class="chart-section">
+    <h2>Active Years Holding the Record</h2>
+    <div class="chart-wrap" id="chart-active-wrap">
+      <canvas id="chart-active"></canvas>
+    </div>
+  </section>
+
+  <section id="table-section">
+    <h2>Record Holders Summary</h2>
+    <div class="table-scroll">
+      <table id="summary-table">
+        <thead>
+          <tr>
+            <th data-key="name">Player</th>
+            <th data-key="firstYear">Years Held</th>
+            <th data-key="peakRecord">Peak Record</th>
+            <th data-key="cumulativeGap">Cumulative Gap</th>
+            <th data-key="cumulativeClimb">Cumulative Climb</th>
+            <th data-key="activeYears">Active Years</th>
+            <th data-key="stature">Stature Score</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Data from the <a href="https://sabr.org/lahman-database/" target="_blank" rel="noopener">Lahman Baseball Database</a>,
+  maintained by SABR. Originally created by Sean Lahman. Licensed under
+  <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noopener">CC BY-SA 3.0</a>.
+</footer>
+
+<script src="./assets/main.js"></script>
+</body>
+</html>

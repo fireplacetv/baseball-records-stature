@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+processor/venv/
+processor/lahman/
+sources/*
+!sources/.gitkeep
