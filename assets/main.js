@@ -104,35 +104,65 @@ function computeMetrics(rows) {
   return { gap, climb, holderOrder, holderStats };
 }
 
-// ── Chart 1: Area chart — career record vs active leader ──────────────────
+// ── Chart 1: Combo — area (career record) + color-coded bars (active leader) ─
 function drawAreaChart(rows) {
   const ctx = document.getElementById("chart-area").getContext("2d");
   const labels = rows.map(r => r.year);
 
+  // Build a shared color index: record holders assigned first (chronological),
+  // then any active leaders who never held the record.
+  const personColorIndex = {};
+  let nextIdx = 0;
+  for (const r of rows) {
+    if (r.career_record_holder && !(r.career_record_holder in personColorIndex))
+      personColorIndex[r.career_record_holder] = nextIdx++;
+  }
+  for (const r of rows) {
+    if (r.active_leader && !(r.active_leader in personColorIndex))
+      personColorIndex[r.active_leader] = nextIdx++;
+  }
+
+  // Bars: bright (dd) when active leader IS the all-time record holder, dull (50) otherwise
+  const barBg = rows.map(r => {
+    if (!r.active_leader) return "rgba(0,0,0,0)";
+    const color = colorFor(personColorIndex[r.active_leader]);
+    return color + (r.active_leader === r.career_record_holder ? "dd" : "50");
+  });
+
   charts.area = new Chart(ctx, {
-    type: "line",
+    type: "bar",
     data: {
       labels,
       datasets: [
         {
+          type: "line",
           label: "Career Record",
           data: rows.map(r => r.career_record),
           fill: true,
-          backgroundColor: "rgba(139,26,26,0.15)",
-          borderColor: "rgba(139,26,26,0.85)",
+          backgroundColor: "rgba(20,20,20,0.07)", // fallback; overridden per-segment below
+          borderColor: "rgba(20,20,20,0.45)",
           borderWidth: 2,
           pointRadius: 0,
-          tension: 0.1,
+          stepped: true,
+          order: 2,
+          segment: {
+            // Tint the fill area with the current record holder's hue
+            backgroundColor: ctx => {
+              const i = ctx.p0DataIndex;
+              if (i < 0 || i >= rows.length) return "rgba(20,20,20,0.07)";
+              const holder = rows[i].career_record_holder;
+              if (!holder || !(holder in personColorIndex)) return "rgba(20,20,20,0.07)";
+              return colorFor(personColorIndex[holder]) + "2a";
+            },
+          },
         },
         {
+          type: "bar",
           label: "Active Leader",
           data: rows.map(r => r.active_leader_total),
-          fill: true,
-          backgroundColor: "rgba(44,95,138,0.15)",
-          borderColor: "rgba(44,95,138,0.85)",
-          borderWidth: 1.5,
-          pointRadius: 0,
-          tension: 0.1,
+          backgroundColor: barBg,
+          borderWidth: 0,
+          order: 1,
         },
       ],
     },
@@ -141,18 +171,19 @@ function drawAreaChart(rows) {
       maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
       plugins: {
-        legend: { position: "top", labels: { boxWidth: 14 } },
+        legend: { display: false },
         tooltip: {
           callbacks: {
             title: items => `${items[0].label}`,
+            label: () => null,
             afterBody: items => {
               const i = items[0].dataIndex;
               const r = rows[i];
               const lines = [];
               if (r.career_record_holder)
-                lines.push(`Record holder: ${r.career_record_holder}`);
+                lines.push(`Record: ${r.career_record?.toLocaleString()} — ${r.career_record_holder}`);
               if (r.active_leader)
-                lines.push(`Active leader: ${r.active_leader}`);
+                lines.push(`Active leader: ${r.active_leader_total?.toLocaleString()} — ${r.active_leader}`);
               const g = r.career_record != null && r.active_leader_total != null
                 ? r.career_record - r.active_leader_total : null;
               if (g != null) lines.push(`Gap: ${g.toLocaleString()}`);
