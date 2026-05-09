@@ -12,7 +12,6 @@ on:
     branches: [main]
     paths:
       - 'processor/**'         # processor code or config changed
-      - '.github/workflows/update-data.yml'
   schedule:
     - cron: '0 8 1 11 *'       # annually: November 1 (post-season Lahman update)
   workflow_dispatch:             # manual trigger from Actions tab
@@ -26,26 +25,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check LAHMAN_BAK_URL secret
+        id: check
+        env:
+          LAHMAN_BAK_URL: ${{ secrets.LAHMAN_BAK_URL }}
+        run: |
+          if [ -z "$LAHMAN_BAK_URL" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::LAHMAN_BAK_URL secret is not set — skipping data rebuild."
+            echo "Add it in Settings → Secrets and variables → Actions."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.check.outputs.skip == 'false'
         with:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: processor/requirements.txt
 
       - name: Install Python dependencies
+        if: steps.check.outputs.skip == 'false'
         run: pip install -r processor/requirements.txt
 
       - name: Get source file
-        # Adapt this step to wherever you store the .bak file.
-        # Example: download from a private URL stored in a repository secret.
+        if: steps.check.outputs.skip == 'false'
+        env:
+          LAHMAN_BAK_URL: ${{ secrets.LAHMAN_BAK_URL }}
         run: |
           mkdir -p sources
-          curl -L -o sources/lahman.bak "${{ secrets.LAHMAN_BAK_URL }}"
+          curl -L -o sources/lahman.bak "$LAHMAN_BAK_URL"
 
       - name: Build data files
+        if: steps.check.outputs.skip == 'false'
         run: python processor/build.py --all
 
       - name: Commit updated data
+        if: steps.check.outputs.skip == 'false'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
