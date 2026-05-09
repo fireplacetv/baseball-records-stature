@@ -93,11 +93,13 @@ main {
 }
 
 /* ── Section labels ────────────────────────────────────────────────── */
-.chart-section {
+.chart-section,
+#table-section {
   margin-top: 2.5rem;
 }
 
-.chart-section h2 {
+.chart-section h2,
+#table-section h2 {
   font-size: 1rem;
   font-weight: bold;
   letter-spacing: 0.06em;
@@ -114,26 +116,9 @@ main {
   width: 100%;
 }
 
-#chart-area-wrap   { height: 400px; }
-#chart-gap-wrap,
-#chart-climb-wrap,
-#chart-active-wrap { height: 260px; }
+#chart-area-wrap { height: 400px; }
 
 /* ── Summary table ─────────────────────────────────────────────────── */
-#table-section {
-  margin-top: 2.5rem;
-}
-
-#table-section h2 {
-  font-size: 1rem;
-  font-weight: bold;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-  border-bottom: 1px solid var(--rule);
-  padding-bottom: 0.35rem;
-  margin-bottom: 1rem;
-}
 
 .table-scroll {
   overflow-x: auto;
@@ -282,7 +267,4 @@ footer {
 @media (max-width: 600px) {
   header h1 { font-size: 1.35rem; }
   #chart-area-wrap { height: 280px; }
-  #chart-gap-wrap,
-  #chart-climb-wrap,
-  #chart-active-wrap { height: 200px; }
 }
