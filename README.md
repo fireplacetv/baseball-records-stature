@@ -2,7 +2,7 @@
 
 A static web page that visualizes the **stature** of all-time career baseball records over time. Select a stat from the dropdown; four charts and a summary table redraw to show how imposing the record was, year by year, and how each record holder compares.
 
-**Live site:** `https://fireplacetv.github.io/baseball-records-stature/`
+**Live site:** [`https://fireplacetv.github.io/baseball-records-stature/`](https://fireplacetv.github.io/baseball-records-stature/)
 
 ---
 
@@ -20,7 +20,7 @@ The processor reads the Lahman SQL Server backup file and computes JSON data fil
 
 Download the SQL Server backup (`.bak`) from SABR:
 
-[https://sabr.app.box.com/s/y1prhc795jk8zvmelfd3jq7tl389y6cd](https://sabr.app.box.com/s/y1prhc795jk8zvmelfd3jq7tl389y6cd)
+> [https://sabr.app.box.com/s/y1prhc795jk8zvmelfd3jq7tl389y6cd](https://sabr.app.box.com/s/y1prhc795jk8zvmelfd3jq7tl389y6cd)
 
 Place the `.bak` file in the `sources/` folder (it is gitignored).
 
