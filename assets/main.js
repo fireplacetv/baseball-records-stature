@@ -17,6 +17,10 @@ function colorFor(index) {
   return PALETTE[index % PALETTE.length];
 }
 
+const DATASET_LINE = 0;   // career record line
+const DATASET_BAR  = 1;   // active leader bars
+const DEFAULT_LINE_COLOR = "rgba(20,20,20,0.75)";
+
 // ── Chart.js global defaults ───────────────────────────────────────────────
 Chart.defaults.font.family = "Georgia, 'Times New Roman', serif";
 Chart.defaults.font.size = 12;
@@ -25,6 +29,7 @@ Chart.defaults.color = "#1a1a18";
 // ── Chart instance + interaction state ────────────────────────────────────
 let charts = {};
 let currentRows = null;
+let currentGap = null;
 let currentPersonColorIndex = null;
 let selectedPlayer = null;
 
@@ -41,7 +46,7 @@ function buildBarBg(rows, personColorIndex, highlightedPlayer) {
 
 function highlightPlayer(player) {
   if (!charts.area || !currentRows) return;
-  charts.area.data.datasets[1].backgroundColor =
+  charts.area.data.datasets[DATASET_BAR].backgroundColor =
     buildBarBg(currentRows, currentPersonColorIndex, player);
   charts.area.update("none");
 }
@@ -49,22 +54,20 @@ function highlightPlayer(player) {
 function selectPlayer(name) {
   selectedPlayer = selectedPlayer === name ? null : name;
   document.querySelectorAll("#summary-table tbody tr").forEach(tr => {
-    const cellName = tr.querySelector("td")?.textContent?.trim();
-    tr.classList.toggle("selected", cellName === selectedPlayer);
+    tr.classList.toggle("selected", tr.dataset.player === selectedPlayer);
   });
   highlightPlayer(selectedPlayer);
 }
 
 // ── Metrics computation ────────────────────────────────────────────────────
 function computeMetrics(rows) {
-  // Gap per year
   const gap = rows.map(r =>
     (r.career_record != null && r.active_leader_total != null)
       ? r.career_record - r.active_leader_total
       : null
   );
 
-  // Climb per year — only when active leader is extending the record
+  // only counted when active leader is extending the record
   const climb = rows.map((r, i) => {
     if (i === 0) return 0;
     if (r.career_record_holder !== r.active_leader) return 0;
@@ -74,7 +77,6 @@ function computeMetrics(rows) {
     return r.career_record - prev;
   });
 
-  // Collect record holders in chronological order
   const holderOrder = [];
   const holderFirstYear = {};
   const holderLastYear = {};
@@ -88,7 +90,6 @@ function computeMetrics(rows) {
     holderLastYear[h] = r.year;
   }
 
-  // Per-holder aggregates
   const holderStats = {};
   for (const h of holderOrder) {
     holderStats[h] = {
@@ -113,7 +114,6 @@ function computeMetrics(rows) {
     if (gap[i] != null) hs.cumulativeGap += gap[i];
     if (climb[i] != null) hs.cumulativeClimb += climb[i];
 
-    // Active years: holder was playing and held record with gap == 0
     if (
       r.active_leader === h &&
       r.active_leader_total != null &&
@@ -124,14 +124,14 @@ function computeMetrics(rows) {
     }
   });
 
-  // Stature score — normalized by holder's peak record for cross-stat comparability
+  // normalized for cross-stat comparability
   for (const hs of Object.values(holderStats)) {
     hs.stature = hs.peakRecord > 0
       ? (hs.cumulativeGap + hs.cumulativeClimb) / hs.peakRecord
       : 0;
   }
 
-  return { gap, climb, holderOrder, holderStats };
+  return { gap, holderOrder, holderStats };
 }
 
 // ── External tooltip ───────────────────────────────────────────────────────
@@ -153,8 +153,7 @@ function externalTooltip({ chart, tooltip }) {
     lines.push(`Record: ${r.career_record?.toLocaleString()} — ${r.career_record_holder}`);
   if (r.active_leader)
     lines.push(`Active: ${r.active_leader_total?.toLocaleString()} — ${r.active_leader}`);
-  const g = r.career_record != null && r.active_leader_total != null
-    ? r.career_record - r.active_leader_total : null;
+  const g = currentGap?.[i];
   if (g != null) lines.push(`Gap: ${g.toLocaleString()}`);
 
   el.innerHTML =
@@ -162,8 +161,8 @@ function externalTooltip({ chart, tooltip }) {
     lines.map(l => `<div class="tt-row">${l}</div>`).join("");
 
   const rect   = chart.canvas.getBoundingClientRect();
-  const barEl  = chart.getDatasetMeta(1).data[i];
-  const lineEl = chart.getDatasetMeta(0).data[i];
+  const barEl  = chart.getDatasetMeta(DATASET_BAR).data[i];
+  const lineEl = chart.getDatasetMeta(DATASET_LINE).data[i];
 
   const barX  = rect.left + (barEl?.x  ?? tooltip.caretX);
   const lineY = rect.top  + (lineEl?.y ?? tooltip.caretY);
@@ -210,9 +209,9 @@ function drawAreaChart(rows) {
   if (charts.area) {
     const c = charts.area;
     c.data.labels = labels;
-    c.data.datasets[0].data = rows.map(r => r.career_record);
-    c.data.datasets[1].data = rows.map(r => r.active_leader_total);
-    c.data.datasets[1].backgroundColor = barBg;
+    c.data.datasets[DATASET_LINE].data = rows.map(r => r.career_record);
+    c.data.datasets[DATASET_BAR].data = rows.map(r => r.active_leader_total);
+    c.data.datasets[DATASET_BAR].backgroundColor = barBg;
     c.update();
     return;
   }
@@ -228,7 +227,7 @@ function drawAreaChart(rows) {
           label: "Career Record",
           data: rows.map(r => r.career_record),
           fill: false,
-          borderColor: "rgba(20,20,20,0.75)",
+          borderColor: DEFAULT_LINE_COLOR,
           borderWidth: 2.5,
           pointRadius: 0,
           stepped: true,
@@ -236,10 +235,10 @@ function drawAreaChart(rows) {
           segment: {
             borderColor: ctx => {
               const i = ctx.p0DataIndex;
-              if (!currentRows || i < 0 || i >= currentRows.length) return "rgba(20,20,20,0.75)";
+              if (!currentRows || i < 0 || i >= currentRows.length) return DEFAULT_LINE_COLOR;
               const holder = currentRows[i].career_record_holder;
               if (!holder || !currentPersonColorIndex || !(holder in currentPersonColorIndex))
-                return "rgba(20,20,20,0.75)";
+                return DEFAULT_LINE_COLOR;
               return colorFor(currentPersonColorIndex[holder]);
             },
           },
@@ -310,6 +309,7 @@ function renderTable() {
 
   for (const row of sorted) {
     const tr = document.createElement("tr");
+    tr.dataset.player = row.name;
     tr.innerHTML = `
       <td>${row.name}</td>
       <td class="num">${row.firstYear}–${row.lastYear}</td>
@@ -320,23 +320,23 @@ function renderTable() {
       <td class="num"><strong>${row.stature.toFixed(2)}</strong></td>
     `;
     if (row.name === selectedPlayer) tr.classList.add("selected");
-    tr.addEventListener("click", () => selectPlayer(row.name));
     tbody.appendChild(tr);
   }
 }
 
 function initTableSorting() {
-  const headers = document.querySelectorAll("#summary-table th[data-key]");
-  headers.forEach(th => {
+  const thByKey = new Map(
+    [...document.querySelectorAll("#summary-table th[data-key]")]
+      .map(th => [th.dataset.key, th])
+  );
+
+  thByKey.forEach((th, key) => {
     th.addEventListener("click", () => {
-      const key = th.dataset.key;
       if (sortKey === key) {
         sortDir = -sortDir;
         th.className = sortDir === 1 ? "sort-asc" : "sort-desc";
       } else {
-        if (sortKey) {
-          document.querySelector(`th[data-key="${sortKey}"]`).className = "";
-        }
+        if (sortKey) thByKey.get(sortKey).className = "";
         sortKey = key;
         sortDir = 1;
         th.className = "sort-asc";
@@ -344,13 +344,19 @@ function initTableSorting() {
       renderTable();
     });
   });
+
+  document.querySelector("#summary-table tbody").addEventListener("click", e => {
+    const tr = e.target.closest("tr");
+    if (tr?.dataset.player) selectPlayer(tr.dataset.player);
+  });
 }
 
 // ── Main render ────────────────────────────────────────────────────────────
 function renderAll(data) {
   selectedPlayer = null;
   const rows = data.rows;
-  const { holderOrder, holderStats } = computeMetrics(rows);
+  const { gap, holderOrder, holderStats } = computeMetrics(rows);
+  currentGap = gap;
 
   drawAreaChart(rows);
 
@@ -358,7 +364,7 @@ function renderAll(data) {
   sortKey = null;
   sortDir = 1;
   document.querySelectorAll("#summary-table th[data-key]").forEach(th => {
-    th.className = "";
+    th.classList.remove("sort-asc", "sort-desc");
   });
   renderTable();
 }
