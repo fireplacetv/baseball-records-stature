@@ -134,6 +134,60 @@ function computeMetrics(rows) {
   return { gap, climb, holderOrder, holderStats };
 }
 
+// ── External tooltip ───────────────────────────────────────────────────────
+function externalTooltip({ chart, tooltip }) {
+  const el = document.getElementById("chart-tooltip");
+  if (!el) return;
+
+  if (tooltip.opacity === 0) {
+    el.style.opacity = "0";
+    return;
+  }
+
+  const i = tooltip.dataPoints?.[0]?.dataIndex;
+  if (i == null || !currentRows) return;
+  const r = currentRows[i];
+
+  const lines = [];
+  if (r.career_record_holder)
+    lines.push(`Record: ${r.career_record?.toLocaleString()} — ${r.career_record_holder}`);
+  if (r.active_leader)
+    lines.push(`Active: ${r.active_leader_total?.toLocaleString()} — ${r.active_leader}`);
+  const g = r.career_record != null && r.active_leader_total != null
+    ? r.career_record - r.active_leader_total : null;
+  if (g != null) lines.push(`Gap: ${g.toLocaleString()}`);
+
+  el.innerHTML =
+    `<div class="tt-year">${r.year}</div>` +
+    lines.map(l => `<div class="tt-row">${l}</div>`).join("");
+
+  const rect   = chart.canvas.getBoundingClientRect();
+  const barEl  = chart.getDatasetMeta(1).data[i];
+  const lineEl = chart.getDatasetMeta(0).data[i];
+
+  const barX  = rect.left + (barEl?.x  ?? tooltip.caretX);
+  const lineY = rect.top  + (lineEl?.y ?? tooltip.caretY);
+
+  const ttW = el.offsetWidth;
+  const ttH = el.offsetHeight;
+  const GAP = 10;
+
+  // Pick the side with more room
+  const toLeft = (window.innerWidth - barX - GAP) < (barX - GAP);
+  el.classList.toggle("tt-left",  toLeft);
+  el.classList.toggle("tt-right", !toLeft);
+
+  let left = toLeft ? barX - ttW - GAP : barX + GAP;
+  let top  = lineY - ttH / 2;
+
+  left = Math.max(4, Math.min(window.innerWidth  - ttW - 4, left));
+  top  = Math.max(4, Math.min(window.innerHeight - ttH - 4, top));
+
+  el.style.left    = left + "px";
+  el.style.top     = top  + "px";
+  el.style.opacity = "1";
+}
+
 // ── Chart 1: Combo — line (career record) + color-coded bars (active leader) ─
 function drawAreaChart(rows) {
   const labels = rows.map(r => r.year);
@@ -159,19 +213,6 @@ function drawAreaChart(rows) {
     c.data.datasets[0].data = rows.map(r => r.career_record);
     c.data.datasets[1].data = rows.map(r => r.active_leader_total);
     c.data.datasets[1].backgroundColor = barBg;
-    c.options.plugins.tooltip.callbacks.afterBody = items => {
-      const i = items[0].dataIndex;
-      const r = rows[i];
-      const lines = [];
-      if (r.career_record_holder)
-        lines.push(`Record: ${r.career_record?.toLocaleString()} — ${r.career_record_holder}`);
-      if (r.active_leader)
-        lines.push(`Active leader: ${r.active_leader_total?.toLocaleString()} — ${r.active_leader}`);
-      const g = r.career_record != null && r.active_leader_total != null
-        ? r.career_record - r.active_leader_total : null;
-      if (g != null) lines.push(`Gap: ${g.toLocaleString()}`);
-      return lines;
-    };
     c.update();
     return;
   }
@@ -226,23 +267,8 @@ function drawAreaChart(rows) {
       plugins: {
         legend: { display: false },
         tooltip: {
-          callbacks: {
-            title: items => `${items[0].label}`,
-            label: () => null,
-            afterBody: items => {
-              const i = items[0].dataIndex;
-              const r = rows[i];
-              const lines = [];
-              if (r.career_record_holder)
-                lines.push(`Record: ${r.career_record?.toLocaleString()} — ${r.career_record_holder}`);
-              if (r.active_leader)
-                lines.push(`Active leader: ${r.active_leader_total?.toLocaleString()} — ${r.active_leader}`);
-              const g = r.career_record != null && r.active_leader_total != null
-                ? r.career_record - r.active_leader_total : null;
-              if (g != null) lines.push(`Gap: ${g.toLocaleString()}`);
-              return lines;
-            },
-          },
+          enabled: false,
+          external: externalTooltip,
         },
       },
       scales: {
