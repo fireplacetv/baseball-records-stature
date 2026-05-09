@@ -30,40 +30,19 @@
     </div>
   </section>
 
-  <section class="chart-section">
-    <h2>Stature of Record &mdash; Cumulative Gap</h2>
-    <div class="chart-wrap" id="chart-gap-wrap">
-      <canvas id="chart-gap"></canvas>
-    </div>
-  </section>
-
-  <section class="chart-section">
-    <h2>Climb Over Previous Record</h2>
-    <div class="chart-wrap" id="chart-climb-wrap">
-      <canvas id="chart-climb"></canvas>
-    </div>
-  </section>
-
-  <section class="chart-section">
-    <h2>Active Years Holding the Record</h2>
-    <div class="chart-wrap" id="chart-active-wrap">
-      <canvas id="chart-active"></canvas>
-    </div>
-  </section>
-
-  <section id="table-section">
+<section id="table-section">
     <h2>Record Holders Summary</h2>
     <div class="table-scroll">
       <table id="summary-table">
         <thead>
           <tr>
-            <th data-key="name">Player</th>
-            <th data-key="firstYear">Years Held</th>
-            <th data-key="peakRecord">Peak Record</th>
-            <th data-key="cumulativeGap">Cumulative Gap</th>
-            <th data-key="cumulativeClimb">Cumulative Climb</th>
-            <th data-key="activeYears">Active Years</th>
-            <th data-key="stature">Stature Score</th>
+            <th data-key="name" data-tooltip="Player who held the all-time career record">Player</th>
+            <th data-key="firstYear" data-tooltip="First and last year the player held the all-time career record">Years Held</th>
+            <th data-key="peakRecord" data-tooltip="The all-time career total at the end of their record tenure">Peak Record</th>
+            <th data-key="cumulativeGap" data-tooltip="Sum of the gap between the career record and the active leader, across every year they held the record. Larger = more dominant reign.">Cumulative Gap</th>
+            <th data-key="cumulativeClimb" data-tooltip="Total increase to the career record made while they were actively playing. Measures how much they personally extended the record.">Cumulative Climb</th>
+            <th data-key="activeYears" data-tooltip="Seasons they were both active and held the record with no gap — they were simultaneously the career leader and still playing.">Active Years</th>
+            <th data-key="stature" data-tooltip="Cumulative Gap + Cumulative Climb. Overall measure of how imposing their record was.">Stature Score</th>
           </tr>
         </thead>
         <tbody></tbody>

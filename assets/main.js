@@ -3,9 +3,14 @@
 
 // ── Palette shared across bar charts ──────────────────────────────────────
 const PALETTE = [
-  "#8b1a1a", "#2c5f8a", "#3a7a3a", "#7a5c2a", "#5a2a7a",
-  "#2a7a6a", "#7a2a4a", "#4a6a2a", "#2a4a7a", "#7a6a2a",
-  "#5a7a2a", "#2a7a4a", "#7a3a2a", "#2a5a7a", "#6a2a7a",
+  "#E69F00", // orange
+  "#56B4E9", // sky blue
+  "#009E73", // bluish green
+  "#0072B2", // blue
+  "#D55E00", // vermillion
+  "#CC79A7", // reddish purple
+  "#F0E442", // yellow
+  "#000000", // black
 ];
 
 function colorFor(index) {
@@ -17,14 +22,37 @@ Chart.defaults.font.family = "Georgia, 'Times New Roman', serif";
 Chart.defaults.font.size = 12;
 Chart.defaults.color = "#1a1a18";
 
-// ── Chart instances (destroy on reload) ───────────────────────────────────
+// ── Chart instance + interaction state ────────────────────────────────────
 let charts = {};
+let currentRows = null;
+let currentPersonColorIndex = null;
+let selectedPlayer = null;
 
-function destroyCharts() {
-  for (const c of Object.values(charts)) {
-    if (c) c.destroy();
-  }
-  charts = {};
+function buildBarBg(rows, personColorIndex, highlightedPlayer) {
+  return rows.map(r => {
+    if (!r.active_leader) return "rgba(0,0,0,0)";
+    const color = colorFor(personColorIndex[r.active_leader]);
+    if (highlightedPlayer) {
+      return r.active_leader === highlightedPlayer ? color + "ff" : color + "1a";
+    }
+    return color + (r.active_leader === r.career_record_holder ? "dd" : "80");
+  });
+}
+
+function highlightPlayer(player) {
+  if (!charts.area || !currentRows) return;
+  charts.area.data.datasets[1].backgroundColor =
+    buildBarBg(currentRows, currentPersonColorIndex, player);
+  charts.area.update("none");
+}
+
+function selectPlayer(name) {
+  selectedPlayer = selectedPlayer === name ? null : name;
+  document.querySelectorAll("#summary-table tbody tr").forEach(tr => {
+    const cellName = tr.querySelector("td")?.textContent?.trim();
+    tr.classList.toggle("selected", cellName === selectedPlayer);
+  });
+  highlightPlayer(selectedPlayer);
 }
 
 // ── Metrics computation ────────────────────────────────────────────────────
@@ -96,21 +124,20 @@ function computeMetrics(rows) {
     }
   });
 
-  // Stature score
+  // Stature score — normalized by holder's peak record for cross-stat comparability
   for (const hs of Object.values(holderStats)) {
-    hs.stature = hs.cumulativeGap + hs.cumulativeClimb;
+    hs.stature = hs.peakRecord > 0
+      ? (hs.cumulativeGap + hs.cumulativeClimb) / hs.peakRecord
+      : 0;
   }
 
   return { gap, climb, holderOrder, holderStats };
 }
 
-// ── Chart 1: Combo — area (career record) + color-coded bars (active leader) ─
+// ── Chart 1: Combo — line (career record) + color-coded bars (active leader) ─
 function drawAreaChart(rows) {
-  const ctx = document.getElementById("chart-area").getContext("2d");
   const labels = rows.map(r => r.year);
 
-  // Build a shared color index: record holders assigned first (chronological),
-  // then any active leaders who never held the record.
   const personColorIndex = {};
   let nextIdx = 0;
   for (const r of rows) {
@@ -122,13 +149,34 @@ function drawAreaChart(rows) {
       personColorIndex[r.active_leader] = nextIdx++;
   }
 
-  // Bars: bright (dd) when active leader IS the all-time record holder, dull (50) otherwise
-  const barBg = rows.map(r => {
-    if (!r.active_leader) return "rgba(0,0,0,0)";
-    const color = colorFor(personColorIndex[r.active_leader]);
-    return color + (r.active_leader === r.career_record_holder ? "dd" : "50");
-  });
+  currentRows = rows;
+  currentPersonColorIndex = personColorIndex;
+  const barBg = buildBarBg(rows, personColorIndex, null);
 
+  if (charts.area) {
+    const c = charts.area;
+    c.data.labels = labels;
+    c.data.datasets[0].data = rows.map(r => r.career_record);
+    c.data.datasets[1].data = rows.map(r => r.active_leader_total);
+    c.data.datasets[1].backgroundColor = barBg;
+    c.options.plugins.tooltip.callbacks.afterBody = items => {
+      const i = items[0].dataIndex;
+      const r = rows[i];
+      const lines = [];
+      if (r.career_record_holder)
+        lines.push(`Record: ${r.career_record?.toLocaleString()} — ${r.career_record_holder}`);
+      if (r.active_leader)
+        lines.push(`Active leader: ${r.active_leader_total?.toLocaleString()} — ${r.active_leader}`);
+      const g = r.career_record != null && r.active_leader_total != null
+        ? r.career_record - r.active_leader_total : null;
+      if (g != null) lines.push(`Gap: ${g.toLocaleString()}`);
+      return lines;
+    };
+    c.update();
+    return;
+  }
+
+  const ctx = document.getElementById("chart-area").getContext("2d");
   charts.area = new Chart(ctx, {
     type: "bar",
     data: {
@@ -138,21 +186,20 @@ function drawAreaChart(rows) {
           type: "line",
           label: "Career Record",
           data: rows.map(r => r.career_record),
-          fill: true,
-          backgroundColor: "rgba(20,20,20,0.07)", // fallback; overridden per-segment below
-          borderColor: "rgba(20,20,20,0.45)",
-          borderWidth: 2,
+          fill: false,
+          borderColor: "rgba(20,20,20,0.75)",
+          borderWidth: 2.5,
           pointRadius: 0,
           stepped: true,
           order: 2,
           segment: {
-            // Tint the fill area with the current record holder's hue
-            backgroundColor: ctx => {
+            borderColor: ctx => {
               const i = ctx.p0DataIndex;
-              if (i < 0 || i >= rows.length) return "rgba(20,20,20,0.07)";
-              const holder = rows[i].career_record_holder;
-              if (!holder || !(holder in personColorIndex)) return "rgba(20,20,20,0.07)";
-              return colorFor(personColorIndex[holder]) + "2a";
+              if (!currentRows || i < 0 || i >= currentRows.length) return "rgba(20,20,20,0.75)";
+              const holder = currentRows[i].career_record_holder;
+              if (!holder || !currentPersonColorIndex || !(holder in currentPersonColorIndex))
+                return "rgba(20,20,20,0.75)";
+              return colorFor(currentPersonColorIndex[holder]);
             },
           },
         },
@@ -170,6 +217,12 @@ function drawAreaChart(rows) {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
+      onClick: (evt, _elements, chart) => {
+        const points = chart.getElementsAtEventForMode(evt, "index", { intersect: false }, true);
+        if (!points.length || !currentRows) return;
+        const holder = currentRows[points[0].index]?.career_record_holder;
+        if (holder) selectPlayer(holder);
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -209,51 +262,6 @@ function drawAreaChart(rows) {
   });
 }
 
-// ── Bar chart helper ───────────────────────────────────────────────────────
-function drawBarChart(canvasId, holderOrder, values, title, yLabel) {
-  const ctx = document.getElementById(canvasId).getContext("2d");
-  const colors = holderOrder.map((_, i) => colorFor(i));
-
-  charts[canvasId] = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: holderOrder,
-      datasets: [{
-        label: yLabel,
-        data: values,
-        backgroundColor: colors.map(c => c + "cc"),
-        borderColor: colors,
-        borderWidth: 1,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        title: { display: false },
-        tooltip: {
-          callbacks: {
-            label: item => `${yLabel}: ${Math.round(item.raw).toLocaleString()}`,
-          },
-        },
-      },
-      scales: {
-        x: {
-          grid: { display: false },
-          ticks: { font: { size: 11 }, maxRotation: 35 },
-        },
-        y: {
-          grid: { color: "rgba(0,0,0,0.06)" },
-          ticks: {
-            font: { family: "'Courier New', monospace", size: 11 },
-            callback: v => v.toLocaleString(),
-          },
-        },
-      },
-    },
-  });
-}
 
 // ── Summary table ──────────────────────────────────────────────────────────
 let tableData = [];
@@ -283,8 +291,10 @@ function renderTable() {
       <td class="num">${Math.round(row.cumulativeGap).toLocaleString()}</td>
       <td class="num">${Math.round(row.cumulativeClimb).toLocaleString()}</td>
       <td class="num">${row.activeYears}</td>
-      <td class="num"><strong>${Math.round(row.stature).toLocaleString()}</strong></td>
+      <td class="num"><strong>${row.stature.toFixed(2)}</strong></td>
     `;
+    if (row.name === selectedPlayer) tr.classList.add("selected");
+    tr.addEventListener("click", () => selectPlayer(row.name));
     tbody.appendChild(tr);
   }
 }
@@ -312,20 +322,11 @@ function initTableSorting() {
 
 // ── Main render ────────────────────────────────────────────────────────────
 function renderAll(data) {
-  destroyCharts();
-
+  selectedPlayer = null;
   const rows = data.rows;
   const { holderOrder, holderStats } = computeMetrics(rows);
 
   drawAreaChart(rows);
-
-  const gaps    = holderOrder.map(h => holderStats[h].cumulativeGap);
-  const climbs  = holderOrder.map(h => holderStats[h].cumulativeClimb);
-  const actives = holderOrder.map(h => holderStats[h].activeYears);
-
-  drawBarChart("chart-gap",    holderOrder, gaps,    "Stature of Record (Cumulative Gap)",    "Cumulative Gap");
-  drawBarChart("chart-climb",  holderOrder, climbs,  "Climb Over Previous Record",            "Cumulative Climb");
-  drawBarChart("chart-active", holderOrder, actives, "Active Years Holding the Record",       "Active Years");
 
   tableData = holderOrder.map(h => holderStats[h]);
   sortKey = null;
