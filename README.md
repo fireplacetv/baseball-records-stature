@@ -20,7 +20,7 @@ The processor reads the Lahman SQL Server backup file and computes JSON data fil
 
 Download the SQL Server backup (`.bak`) from SABR:
 
-> https://sabr.app.box.com/s/y1prhc795jk8zvmelfd3jq7tl389y6cd
+> [https://sabr.app.box.com/s/y1prhc795jk8zvmelfd3jq7tl389y6cd](https://sabr.app.box.com/s/y1prhc795jk8zvmelfd3jq7tl389y6cd)
 
 Place the `.bak` file in the `sources/` folder (it is gitignored).
 
