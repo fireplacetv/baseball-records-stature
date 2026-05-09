@@ -92,14 +92,23 @@ function computeMetrics(rows) {
   const holderOrder = [];
   const holderFirstYear = {};
   const holderLastYear = {};
+  const holderStretches = {};
+  let prevHolder = null;
   for (const r of rows) {
     const h = r.career_record_holder;
-    if (!h) continue;
+    if (!h) { prevHolder = null; continue; }
     if (!holderFirstYear[h]) {
       holderOrder.push(h);
       holderFirstYear[h] = r.year;
     }
     holderLastYear[h] = r.year;
+    if (h !== prevHolder) {
+      if (!holderStretches[h]) holderStretches[h] = [];
+      holderStretches[h].push([r.year, r.year]);
+    } else {
+      holderStretches[h][holderStretches[h].length - 1][1] = r.year;
+    }
+    prevHolder = h;
   }
 
   const holderStats = {};
@@ -108,6 +117,9 @@ function computeMetrics(rows) {
       name: h,
       firstYear: holderFirstYear[h],
       lastYear: holderLastYear[h],
+      yearsLabel: (holderStretches[h] || [])
+        .map(([s, e]) => s === e ? String(s) : `${s}–${e}`)
+        .join("<br>"),
       peakRecord: 0,
       cumulativeGap: 0,
       cumulativeClimb: 0,
@@ -431,7 +443,7 @@ function renderTable() {
     tr.dataset.player = row.name;
     tr.innerHTML = `
       <td>${row.name}</td>
-      <td class="num">${row.firstYear}–${row.lastYear}</td>
+      <td class="num">${row.yearsLabel}</td>
       <td class="num">${row.peakRecord.toLocaleString()}</td>
       <td class="num">${Math.round(row.cumulativeGap).toLocaleString()}</td>
       <td class="num">${Math.round(row.cumulativeClimb).toLocaleString()}</td>
@@ -462,6 +474,10 @@ function initTableSorting() {
       }
       renderTable();
     });
+  });
+
+  document.querySelectorAll("#summary-table .th-info").forEach(el => {
+    el.addEventListener("click", e => e.stopPropagation());
   });
 
   document.querySelector("#summary-table tbody").addEventListener("click", e => {
