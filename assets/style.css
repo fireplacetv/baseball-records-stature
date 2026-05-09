@@ -232,6 +232,49 @@ main {
   border-right: 7px solid var(--ink);
 }
 
+#chart-tooltip.tt-locked {
+  border-top: 2px solid var(--accent);
+}
+
+#chart-hover-tooltip,
+#chart-hover-tooltip-2 {
+  position: fixed;
+  z-index: 301;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 1.4;
+  padding: 0.2rem 0.4rem;
+  white-space: nowrap;
+  text-align: center;
+}
+
+#chart-leader-line {
+  position: fixed;
+  z-index: 300;
+  pointer-events: none;
+  width: 1px;
+  opacity: 0;
+  background: rgba(26, 26, 24, 0.35);
+  transition: opacity 0.1s;
+}
+
+#chart-hover-tooltip::after,
+#chart-hover-tooltip-2::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid var(--ink);
+}
+
 .tt-year {
   font-family: var(--font-mono);
   font-size: 0.8rem;

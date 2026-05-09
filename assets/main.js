@@ -39,7 +39,11 @@ let currentRows = null;
 let currentGap = null;
 let currentPersonColorIndex = null;
 let selectedPlayer = null;
-let tooltipEl = null;   // resolved once on DOMContentLoaded
+let tooltipEl = null;         // resolved once on DOMContentLoaded
+let hoverTooltipEl = null;    // small hover tooltip at active-leader bar top
+let hoverTooltipEl2 = null;   // small hover tooltip at career-record line
+let leaderLineEl = null;      // thin connector from tooltip 2 to the line
+let lockedIndex = null;       // non-null when user has clicked to pin the tooltip
 
 function buildBarBg(rows, personColorIndex, highlightedPlayer) {
   return rows.map(r => {
@@ -153,16 +157,94 @@ function formatTooltipLines(r, gap) {
   return lines;
 }
 
+function hideHoverTooltips() {
+  if (hoverTooltipEl)  hoverTooltipEl.style.opacity  = "0";
+  if (hoverTooltipEl2) hoverTooltipEl2.style.opacity = "0";
+  if (leaderLineEl)    leaderLineEl.style.opacity    = "0";
+}
+
 function externalTooltip({ chart, tooltip }) {
   if (!tooltipEl) return;
 
-  if (tooltip.opacity === 0) {
+  const hoverI   = tooltip.dataPoints?.[0]?.dataIndex;
+  const hovering = lockedIndex === null && tooltip.opacity !== 0
+                   && hoverI != null && currentRows != null;
+
+  if (!hovering) {
+    hideHoverTooltips();
+  } else {
+    const hr   = currentRows[hoverI];
+    const rect = chart.canvas.getBoundingClientRect();
+    const barEl  = chart.getDatasetMeta(DATASET_BAR).data[hoverI];
+    const lineEl = chart.getDatasetMeta(DATASET_LINE).data[hoverI];
+    const barX   = rect.left + (barEl?.x  ?? tooltip.caretX);
+    const barTop = rect.top  + (barEl?.y  ?? tooltip.caretY);
+    const lineY  = rect.top  + (lineEl?.y ?? tooltip.caretY);
+    const lineX  = rect.left + (lineEl?.x ?? tooltip.caretX);
+    const gap2   = (hr.career_record != null && hr.active_leader_total != null)
+      ? hr.career_record - hr.active_leader_total : null;
+
+    // Tooltip 1 — active leader at bar top
+    let top1 = null;
+    if (hoverTooltipEl && hr.active_leader && hr.active_leader_total != null) {
+      hoverTooltipEl.innerHTML =
+        `<div>${hr.active_leader}</div>` +
+        `<div>${hr.active_leader_total.toLocaleString()}</div>`;
+      const tt1W = hoverTooltipEl.offsetWidth;
+      const tt1H = hoverTooltipEl.offsetHeight;
+      top1 = clamp(barTop - tt1H - 8, 4, window.innerHeight - tt1H - 4);
+      hoverTooltipEl.style.left    = clamp(barX  - tt1W / 2, 4, window.innerWidth  - tt1W - 4) + "px";
+      hoverTooltipEl.style.top     = top1 + "px";
+      hoverTooltipEl.style.opacity = "1";
+    } else if (hoverTooltipEl) {
+      hoverTooltipEl.style.opacity = "0";
+    }
+
+    // Tooltip 2 — career leader at line, only when gap > 0 (different person)
+    if (hoverTooltipEl2 && gap2 != null && gap2 > 0 && hr.career_record_holder) {
+      hoverTooltipEl2.innerHTML =
+        `<div>${hr.career_record_holder}</div>` +
+        `<div>${hr.career_record.toLocaleString()}</div>`;
+      const tt2W = hoverTooltipEl2.offsetWidth;
+      const tt2H = hoverTooltipEl2.offsetHeight;
+      let top2 = clamp(lineY - tt2H - 8, 4, window.innerHeight - tt2H - 4);
+
+      // Push up if it overlaps tooltip 1
+      if (top1 !== null && top2 + tt2H + 4 > top1) {
+        top2 = Math.max(4, top1 - tt2H - 4);
+      }
+
+      hoverTooltipEl2.style.left    = clamp(lineX - tt2W / 2, 4, window.innerWidth  - tt2W - 4) + "px";
+      hoverTooltipEl2.style.top     = top2 + "px";
+      hoverTooltipEl2.style.opacity = "1";
+
+      // Thin connector from tooltip 2 arrow tip down to the line
+      if (leaderLineEl) {
+        const connTop    = top2 + tt2H + 5; // 5px = arrow height
+        const connHeight = lineY - connTop;
+        if (connHeight > 0) {
+          leaderLineEl.style.left    = (lineX - 0.5) + "px";
+          leaderLineEl.style.top     = connTop + "px";
+          leaderLineEl.style.height  = connHeight + "px";
+          leaderLineEl.style.opacity = "1";
+        } else {
+          leaderLineEl.style.opacity = "0";
+        }
+      }
+    } else {
+      if (hoverTooltipEl2) hoverTooltipEl2.style.opacity = "0";
+      if (leaderLineEl)    leaderLineEl.style.opacity    = "0";
+    }
+  }
+
+  // Locked tooltip — stays pinned to clicked year
+  if (lockedIndex === null) {
     tooltipEl.style.opacity = "0";
     return;
   }
+  const i = lockedIndex;
 
-  const i = tooltip.dataPoints?.[0]?.dataIndex;
-  if (i == null || !currentRows) return;
+  if (!currentRows) return;
   const r = currentRows[i];
 
   tooltipEl.innerHTML =
@@ -255,7 +337,17 @@ function barDatasetConfig(rows, barBg) {
 function handleAreaChartClick(evt, _elements, chart) {
   const points = chart.getElementsAtEventForMode(evt, "index", { intersect: false }, true);
   if (!points.length || !currentRows) return;
-  const holder = currentRows[points[0].index]?.career_record_holder;
+  const i = points[0].index;
+
+  if (lockedIndex === i) {
+    lockedIndex = null;
+    tooltipEl.classList.remove("tt-locked");
+  } else {
+    lockedIndex = i;
+    tooltipEl.classList.add("tt-locked");
+  }
+
+  const holder = currentRows[i]?.active_leader;
   if (holder) selectPlayer(holder);
 }
 
@@ -381,6 +473,12 @@ function initTableSorting() {
 // ── Main render ────────────────────────────────────────────────────────────
 function renderAll(data) {
   selectedPlayer = null;
+  lockedIndex = null;
+  if (tooltipEl) {
+    tooltipEl.style.opacity = "0";
+    tooltipEl.classList.remove("tt-locked");
+  }
+  hideHoverTooltips();
   const rows = data.rows;
   const { gap, holderOrder, holderStats } = computeMetrics(rows);
   currentGap = gap;
@@ -434,7 +532,10 @@ async function loadIndex() {
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
-  tooltipEl = document.getElementById("chart-tooltip");
+  tooltipEl       = document.getElementById("chart-tooltip");
+  hoverTooltipEl  = document.getElementById("chart-hover-tooltip");
+  hoverTooltipEl2 = document.getElementById("chart-hover-tooltip-2");
+  leaderLineEl    = document.getElementById("chart-leader-line");
   initTableSorting();
 
   const index = await loadIndex();
