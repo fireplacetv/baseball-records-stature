@@ -263,16 +263,23 @@ def load_tables(sqlcmd):
     print("  Loading Batting...")
     batting = query_df(
         sqlcmd,
-        "SELECT playerID, yearID, teamID, HR, H, [2B], [3B], RBI, R, SB, BB, SO "
+        "SELECT playerID, yearID, teamID, HR, H, [2B], [3B], RBI, R, SB, BB, SO, "
+        "AB, G, HBP, IBB, SF, SH, GIDP "
         "FROM dbo.Batting",
-        ["playerID", "yearID", "teamID", "HR", "H", "2B", "3B", "RBI", "R", "SB", "BB", "SO"],
+        ["playerID", "yearID", "teamID", "HR", "H", "2B", "3B", "RBI", "R", "SB", "BB", "SO",
+         "AB", "G", "HBP", "IBB", "SF", "SH", "GIDP"],
     )
+    # Compute plate appearances: AB + BB + HBP + SF + SH (IBB is a subset of BB)
+    for _c in ["AB", "BB", "HBP", "SF", "SH"]:
+        batting[_c] = pd.to_numeric(batting[_c], errors="coerce").fillna(0)
+    batting["PA"] = batting["AB"] + batting["BB"] + batting["HBP"] + batting["SF"] + batting["SH"]
 
     print("  Loading Pitching...")
     pitching = query_df(
         sqlcmd,
-        "SELECT playerID, yearID, teamID, W, SO, SV, G FROM dbo.Pitching",
-        ["playerID", "yearID", "teamID", "W", "SO", "SV", "G"],
+        "SELECT playerID, yearID, teamID, W, SO, SV, G, [L], CG, SHO, H, IPouts, BB "
+        "FROM dbo.Pitching",
+        ["playerID", "yearID", "teamID", "W", "SO", "SV", "G", "L", "CG", "SHO", "H", "IPouts", "BB"],
     )
 
     print("  Loading Appearances...")
@@ -312,6 +319,10 @@ def compute_stat(stat_def, name_map, batting, pitching, active_by_year, lahman_v
     df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     season = df.groupby(["playerID", "yearID"])[col].sum().reset_index()
     season.columns = ["playerID", "yearID", "val"]
+    # scale: e.g. IPouts → innings pitched (divide by 3)
+    scale = stat_def.get("scale", 1)
+    if scale != 1:
+        season["val"] = (season["val"] / scale).astype(int)
 
     years = sorted(season["yearID"].unique())
     if not years:
@@ -450,7 +461,7 @@ def main():
                 )
                 if result:
                     write_json(DATA_DIR / f"{stat_def['code']}.json", result)
-                    index.append({"code": stat_def["code"], "label": stat_def["label"]})
+                    index.append({"code": stat_def["code"], "label": stat_def["label"], "table": stat_def["table"]})
             write_json(DATA_DIR / "_index.json", index)
             print(f"\nDone. {len(index)} stats written to data/")
 

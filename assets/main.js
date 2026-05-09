@@ -376,7 +376,12 @@ function areaChartOptions() {
     scales: {
       x: {
         grid: { color: "rgba(0,0,0,0.06)" },
-        ticks: { maxTicksLimit: 20, font: { size: 11 } },
+        afterBuildTicks(axis) {
+          axis.ticks = axis.ticks.filter(t =>
+            axis.chart.data.labels[t.value] % 10 === 0
+          );
+        },
+        ticks: { font: { size: 11 } },
       },
       y: {
         grid: { color: "rgba(0,0,0,0.06)" },
@@ -488,6 +493,7 @@ function initTableSorting() {
 
 // ── Main render ────────────────────────────────────────────────────────────
 function renderAll(data) {
+  document.getElementById("chart-title").textContent = data.label;
   selectedPlayer = null;
   lockedIndex = null;
   if (tooltipEl) {
@@ -522,7 +528,14 @@ function clearStatus() {
   el.className = "";
 }
 
+function setActiveButton(code) {
+  document.querySelectorAll(".stat-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.code === code);
+  });
+}
+
 async function loadStat(code) {
+  setActiveButton(code);
   setStatus(`Loading ${code}…`);
   try {
     const resp = await fetch(`./data/${code}.json`);
@@ -557,17 +570,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   const index = await loadIndex();
   if (!index) return;
 
-  const select = document.getElementById("stat-select");
-  for (const { code, label } of index) {
-    const opt = document.createElement("option");
-    opt.value = code;
-    opt.textContent = label;
-    select.appendChild(opt);
+  const battingRow  = document.getElementById("batting-row");
+  const pitchingRow = document.getElementById("pitching-row");
+
+  for (const { code, label, table } of index) {
+    const btn = document.createElement("button");
+    btn.className = "stat-btn";
+    btn.dataset.code = code;
+    btn.textContent = label;
+    btn.addEventListener("click", () => loadStat(code));
+    (table === "pitching" ? pitchingRow : battingRow).appendChild(btn);
   }
 
-  select.value = index.some(s => s.code === "HR") ? "HR" : index[0].code;
-
-  select.addEventListener("change", () => loadStat(select.value));
-
-  await loadStat(select.value);
+  const defaultCode = index[Math.floor(Math.random() * index.length)].code;
+  await loadStat(defaultCode);
 });

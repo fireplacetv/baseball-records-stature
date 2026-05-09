@@ -15,8 +15,14 @@
 </header>
 
 <div id="controls">
-  <label for="stat-select">Stat:</label>
-  <select id="stat-select" aria-label="Select a statistic"></select>
+  <div class="stat-group">
+    <span class="stat-group-label">Batting</span>
+    <div class="stat-row" id="batting-row"></div>
+  </div>
+  <div class="stat-group">
+    <span class="stat-group-label">Pitching</span>
+    <div class="stat-row" id="pitching-row"></div>
+  </div>
 </div>
 
 <p id="status"></p>
@@ -24,14 +30,24 @@
 <main>
 
   <section class="chart-section">
-    <h2>Career Record vs. Active Leader</h2>
+    <h2 id="chart-title">Career Record vs. Active Leader</h2>
     <div class="chart-wrap" id="chart-area-wrap">
       <canvas id="chart-area"></canvas>
+    </div>
+    <div class="chart-legend">
+      <div class="legend-item">
+        <div class="legend-bar"></div>
+        <span>Active Leader (career total through year)</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-line"></div>
+        <span>Career Record (all-time high)</span>
+      </div>
     </div>
   </section>
 
   <section id="table-section">
-    <h2>Record Holders Summary</h2>
+    <h2>Record Holders</h2>
     <div class="table-scroll">
       <table id="summary-table">
         <thead>
