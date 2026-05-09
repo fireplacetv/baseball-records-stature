@@ -8,7 +8,14 @@ name: Update Baseball Data
 # For most users, rebuilding data locally and committing data/ is simpler.
 
 on:
-  workflow_dispatch:   # manual trigger only
+  push:
+    branches: [main]
+    paths:
+      - 'processor/**'         # processor code or config changed
+      - '.github/workflows/update-data.yml'
+  schedule:
+    - cron: '0 8 1 11 *'       # annually: November 1 (post-season Lahman update)
+  workflow_dispatch:             # manual trigger from Actions tab
 
 jobs:
   build:
