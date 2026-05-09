@@ -3,40 +3,79 @@
 
 // ── Palette shared across bar charts ──────────────────────────────────────
 const PALETTE = [
-  "#8b1a1a", "#2c5f8a", "#3a7a3a", "#7a5c2a", "#5a2a7a",
-  "#2a7a6a", "#7a2a4a", "#4a6a2a", "#2a4a7a", "#7a6a2a",
-  "#5a7a2a", "#2a7a4a", "#7a3a2a", "#2a5a7a", "#6a2a7a",
+  "#E69F00", // orange
+  "#56B4E9", // sky blue
+  "#009E73", // bluish green
+  "#0072B2", // blue
+  "#D55E00", // vermillion
+  "#CC79A7", // reddish purple
+  "#F0E442", // yellow
+  "#000000", // black
 ];
 
 function colorFor(index) {
   return PALETTE[index % PALETTE.length];
 }
 
+const DATASET_LINE = 0;   // career record line
+const DATASET_BAR  = 1;   // active leader bars
+const DEFAULT_LINE_COLOR = "rgba(20,20,20,0.75)";
+
+// Bar opacity (hex alpha suffix appended to color)
+const ALPHA_SELECTED = "ff";   // selected player
+const ALPHA_DIMMED   = "1a";   // non-selected when something is selected
+const ALPHA_HOLDER   = "dd";   // active leader is also the all-time holder
+const ALPHA_OTHER    = "80";   // active leader, not the holder
+const TRANSPARENT    = "rgba(0,0,0,0)";
+
 // ── Chart.js global defaults ───────────────────────────────────────────────
 Chart.defaults.font.family = "Georgia, 'Times New Roman', serif";
 Chart.defaults.font.size = 12;
 Chart.defaults.color = "#1a1a18";
 
-// ── Chart instances (destroy on reload) ───────────────────────────────────
+// ── Chart instance + interaction state ────────────────────────────────────
 let charts = {};
+let currentRows = null;
+let currentGap = null;
+let currentPersonColorIndex = null;
+let selectedPlayer = null;
+let tooltipEl = null;   // resolved once on DOMContentLoaded
 
-function destroyCharts() {
-  for (const c of Object.values(charts)) {
-    if (c) c.destroy();
-  }
-  charts = {};
+function buildBarBg(rows, personColorIndex, highlightedPlayer) {
+  return rows.map(r => {
+    if (!r.active_leader) return TRANSPARENT;
+    const color = colorFor(personColorIndex[r.active_leader]);
+    if (highlightedPlayer) {
+      return color + (r.active_leader === highlightedPlayer ? ALPHA_SELECTED : ALPHA_DIMMED);
+    }
+    return color + (r.active_leader === r.career_record_holder ? ALPHA_HOLDER : ALPHA_OTHER);
+  });
+}
+
+function highlightPlayer(player) {
+  if (!charts.area || !currentRows) return;
+  charts.area.data.datasets[DATASET_BAR].backgroundColor =
+    buildBarBg(currentRows, currentPersonColorIndex, player);
+  charts.area.update("none");
+}
+
+function selectPlayer(name) {
+  selectedPlayer = selectedPlayer === name ? null : name;
+  document.querySelectorAll("#summary-table tbody tr").forEach(tr => {
+    tr.classList.toggle("selected", tr.dataset.player === selectedPlayer);
+  });
+  highlightPlayer(selectedPlayer);
 }
 
 // ── Metrics computation ────────────────────────────────────────────────────
 function computeMetrics(rows) {
-  // Gap per year
   const gap = rows.map(r =>
     (r.career_record != null && r.active_leader_total != null)
       ? r.career_record - r.active_leader_total
       : null
   );
 
-  // Climb per year — only when active leader is extending the record
+  // only counted when active leader is extending the record
   const climb = rows.map((r, i) => {
     if (i === 0) return 0;
     if (r.career_record_holder !== r.active_leader) return 0;
@@ -46,7 +85,6 @@ function computeMetrics(rows) {
     return r.career_record - prev;
   });
 
-  // Collect record holders in chronological order
   const holderOrder = [];
   const holderFirstYear = {};
   const holderLastYear = {};
@@ -60,7 +98,6 @@ function computeMetrics(rows) {
     holderLastYear[h] = r.year;
   }
 
-  // Per-holder aggregates
   const holderStats = {};
   for (const h of holderOrder) {
     holderStats[h] = {
@@ -85,7 +122,6 @@ function computeMetrics(rows) {
     if (gap[i] != null) hs.cumulativeGap += gap[i];
     if (climb[i] != null) hs.cumulativeClimb += climb[i];
 
-    // Active years: holder was playing and held record with gap == 0
     if (
       r.active_leader === h &&
       r.active_leader_total != null &&
@@ -96,164 +132,188 @@ function computeMetrics(rows) {
     }
   });
 
-  // Stature score
+  // normalized for cross-stat comparability
   for (const hs of Object.values(holderStats)) {
-    hs.stature = hs.cumulativeGap + hs.cumulativeClimb;
+    hs.stature = hs.peakRecord > 0
+      ? (hs.cumulativeGap + hs.cumulativeClimb) / hs.peakRecord
+      : 0;
   }
 
-  return { gap, climb, holderOrder, holderStats };
+  return { gap, holderOrder, holderStats };
 }
 
-// ── Chart 1: Combo — area (career record) + color-coded bars (active leader) ─
+// ── External tooltip ───────────────────────────────────────────────────────
+function formatTooltipLines(r, gap) {
+  const lines = [];
+  if (r.career_record_holder)
+    lines.push(`Record: ${r.career_record?.toLocaleString()} — ${r.career_record_holder}`);
+  if (r.active_leader)
+    lines.push(`Active: ${r.active_leader_total?.toLocaleString()} — ${r.active_leader}`);
+  if (gap != null) lines.push(`Gap: ${gap.toLocaleString()}`);
+  return lines;
+}
+
+function externalTooltip({ chart, tooltip }) {
+  if (!tooltipEl) return;
+
+  if (tooltip.opacity === 0) {
+    tooltipEl.style.opacity = "0";
+    return;
+  }
+
+  const i = tooltip.dataPoints?.[0]?.dataIndex;
+  if (i == null || !currentRows) return;
+  const r = currentRows[i];
+
+  tooltipEl.innerHTML =
+    `<div class="tt-year">${r.year}</div>` +
+    formatTooltipLines(r, currentGap?.[i])
+      .map(l => `<div class="tt-row">${l}</div>`)
+      .join("");
+
+  const rect   = chart.canvas.getBoundingClientRect();
+  const barEl  = chart.getDatasetMeta(DATASET_BAR).data[i];
+  const lineEl = chart.getDatasetMeta(DATASET_LINE).data[i];
+
+  const barX  = rect.left + (barEl?.x  ?? tooltip.caretX);
+  const lineY = rect.top  + (lineEl?.y ?? tooltip.caretY);
+
+  const ttW = tooltipEl.offsetWidth;
+  const ttH = tooltipEl.offsetHeight;
+  const GAP = 10;
+
+  // anchor on whichever side has more horizontal room
+  const toLeft = (window.innerWidth - barX - GAP) < (barX - GAP);
+  tooltipEl.classList.toggle("tt-left",  toLeft);
+  tooltipEl.classList.toggle("tt-right", !toLeft);
+
+  const left = clamp(toLeft ? barX - ttW - GAP : barX + GAP, 4, window.innerWidth  - ttW - 4);
+  const top  = clamp(lineY - ttH / 2,                        4, window.innerHeight - ttH - 4);
+
+  tooltipEl.style.left    = left + "px";
+  tooltipEl.style.top     = top  + "px";
+  tooltipEl.style.opacity = "1";
+}
+
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+// ── Chart 1: Combo — line (career record) + color-coded bars (active leader) ─
+
+// Order is load-bearing: record holders are assigned palette slots first
+// so colors stay stable for them across stats; active-only leaders fill in after.
+function buildPersonColorIndex(rows) {
+  const index = {};
+  let next = 0;
+  for (const r of rows) {
+    if (r.career_record_holder && !(r.career_record_holder in index))
+      index[r.career_record_holder] = next++;
+  }
+  for (const r of rows) {
+    if (r.active_leader && !(r.active_leader in index))
+      index[r.active_leader] = next++;
+  }
+  return index;
+}
+
+function holderSegmentColor(ctx) {
+  const i = ctx.p0DataIndex;
+  if (!currentRows || i < 0 || i >= currentRows.length) return DEFAULT_LINE_COLOR;
+  const holder = currentRows[i].career_record_holder;
+  if (!holder || !currentPersonColorIndex || !(holder in currentPersonColorIndex))
+    return DEFAULT_LINE_COLOR;
+  return colorFor(currentPersonColorIndex[holder]);
+}
+
+function lineDatasetConfig(rows) {
+  return {
+    type: "line",
+    label: "Career Record",
+    data: rows.map(r => r.career_record),
+    fill: false,
+    borderColor: DEFAULT_LINE_COLOR,
+    borderWidth: 2.5,
+    pointRadius: 0,
+    stepped: true,
+    order: 2,
+    segment: { borderColor: holderSegmentColor },
+  };
+}
+
+function barDatasetConfig(rows, barBg) {
+  return {
+    type: "bar",
+    label: "Active Leader",
+    data: rows.map(r => r.active_leader_total),
+    backgroundColor: barBg,
+    borderWidth: 0,
+    order: 1,
+  };
+}
+
+function handleAreaChartClick(evt, _elements, chart) {
+  const points = chart.getElementsAtEventForMode(evt, "index", { intersect: false }, true);
+  if (!points.length || !currentRows) return;
+  const holder = currentRows[points[0].index]?.career_record_holder;
+  if (holder) selectPlayer(holder);
+}
+
+function areaChartOptions() {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: "index", intersect: false },
+    onClick: handleAreaChartClick,
+    plugins: {
+      legend: { display: false },
+      tooltip: { enabled: false, external: externalTooltip },
+    },
+    scales: {
+      x: {
+        grid: { color: "rgba(0,0,0,0.06)" },
+        ticks: { maxTicksLimit: 20, font: { size: 11 } },
+      },
+      y: {
+        grid: { color: "rgba(0,0,0,0.06)" },
+        ticks: {
+          font: { family: "'Courier New', monospace", size: 11 },
+          callback: v => v.toLocaleString(),
+        },
+      },
+    },
+  };
+}
+
+function updateAreaChart(chart, rows, barBg) {
+  chart.data.labels = rows.map(r => r.year);
+  chart.data.datasets[DATASET_LINE].data = rows.map(r => r.career_record);
+  chart.data.datasets[DATASET_BAR].data = rows.map(r => r.active_leader_total);
+  chart.data.datasets[DATASET_BAR].backgroundColor = barBg;
+  chart.update();
+}
+
 function drawAreaChart(rows) {
+  currentRows = rows;
+  currentPersonColorIndex = buildPersonColorIndex(rows);
+  const barBg = buildBarBg(rows, currentPersonColorIndex, null);
+
+  if (charts.area) {
+    updateAreaChart(charts.area, rows, barBg);
+    return;
+  }
+
   const ctx = document.getElementById("chart-area").getContext("2d");
-  const labels = rows.map(r => r.year);
-
-  // Build a shared color index: record holders assigned first (chronological),
-  // then any active leaders who never held the record.
-  const personColorIndex = {};
-  let nextIdx = 0;
-  for (const r of rows) {
-    if (r.career_record_holder && !(r.career_record_holder in personColorIndex))
-      personColorIndex[r.career_record_holder] = nextIdx++;
-  }
-  for (const r of rows) {
-    if (r.active_leader && !(r.active_leader in personColorIndex))
-      personColorIndex[r.active_leader] = nextIdx++;
-  }
-
-  // Bars: bright (dd) when active leader IS the all-time record holder, dull (50) otherwise
-  const barBg = rows.map(r => {
-    if (!r.active_leader) return "rgba(0,0,0,0)";
-    const color = colorFor(personColorIndex[r.active_leader]);
-    return color + (r.active_leader === r.career_record_holder ? "dd" : "50");
-  });
-
   charts.area = new Chart(ctx, {
     type: "bar",
     data: {
-      labels,
-      datasets: [
-        {
-          type: "line",
-          label: "Career Record",
-          data: rows.map(r => r.career_record),
-          fill: true,
-          backgroundColor: "rgba(20,20,20,0.07)", // fallback; overridden per-segment below
-          borderColor: "rgba(20,20,20,0.45)",
-          borderWidth: 2,
-          pointRadius: 0,
-          stepped: true,
-          order: 2,
-          segment: {
-            // Tint the fill area with the current record holder's hue
-            backgroundColor: ctx => {
-              const i = ctx.p0DataIndex;
-              if (i < 0 || i >= rows.length) return "rgba(20,20,20,0.07)";
-              const holder = rows[i].career_record_holder;
-              if (!holder || !(holder in personColorIndex)) return "rgba(20,20,20,0.07)";
-              return colorFor(personColorIndex[holder]) + "2a";
-            },
-          },
-        },
-        {
-          type: "bar",
-          label: "Active Leader",
-          data: rows.map(r => r.active_leader_total),
-          backgroundColor: barBg,
-          borderWidth: 0,
-          order: 1,
-        },
-      ],
+      labels: rows.map(r => r.year),
+      datasets: [lineDatasetConfig(rows), barDatasetConfig(rows, barBg)],
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            title: items => `${items[0].label}`,
-            label: () => null,
-            afterBody: items => {
-              const i = items[0].dataIndex;
-              const r = rows[i];
-              const lines = [];
-              if (r.career_record_holder)
-                lines.push(`Record: ${r.career_record?.toLocaleString()} — ${r.career_record_holder}`);
-              if (r.active_leader)
-                lines.push(`Active leader: ${r.active_leader_total?.toLocaleString()} — ${r.active_leader}`);
-              const g = r.career_record != null && r.active_leader_total != null
-                ? r.career_record - r.active_leader_total : null;
-              if (g != null) lines.push(`Gap: ${g.toLocaleString()}`);
-              return lines;
-            },
-          },
-        },
-      },
-      scales: {
-        x: {
-          grid: { color: "rgba(0,0,0,0.06)" },
-          ticks: { maxTicksLimit: 20, font: { size: 11 } },
-        },
-        y: {
-          grid: { color: "rgba(0,0,0,0.06)" },
-          ticks: {
-            font: { family: "'Courier New', monospace", size: 11 },
-            callback: v => v.toLocaleString(),
-          },
-        },
-      },
-    },
+    options: areaChartOptions(),
   });
 }
 
-// ── Bar chart helper ───────────────────────────────────────────────────────
-function drawBarChart(canvasId, holderOrder, values, title, yLabel) {
-  const ctx = document.getElementById(canvasId).getContext("2d");
-  const colors = holderOrder.map((_, i) => colorFor(i));
-
-  charts[canvasId] = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: holderOrder,
-      datasets: [{
-        label: yLabel,
-        data: values,
-        backgroundColor: colors.map(c => c + "cc"),
-        borderColor: colors,
-        borderWidth: 1,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        title: { display: false },
-        tooltip: {
-          callbacks: {
-            label: item => `${yLabel}: ${Math.round(item.raw).toLocaleString()}`,
-          },
-        },
-      },
-      scales: {
-        x: {
-          grid: { display: false },
-          ticks: { font: { size: 11 }, maxRotation: 35 },
-        },
-        y: {
-          grid: { color: "rgba(0,0,0,0.06)" },
-          ticks: {
-            font: { family: "'Courier New', monospace", size: 11 },
-            callback: v => v.toLocaleString(),
-          },
-        },
-      },
-    },
-  });
-}
 
 // ── Summary table ──────────────────────────────────────────────────────────
 let tableData = [];
@@ -276,6 +336,7 @@ function renderTable() {
 
   for (const row of sorted) {
     const tr = document.createElement("tr");
+    tr.dataset.player = row.name;
     tr.innerHTML = `
       <td>${row.name}</td>
       <td class="num">${row.firstYear}–${row.lastYear}</td>
@@ -283,24 +344,26 @@ function renderTable() {
       <td class="num">${Math.round(row.cumulativeGap).toLocaleString()}</td>
       <td class="num">${Math.round(row.cumulativeClimb).toLocaleString()}</td>
       <td class="num">${row.activeYears}</td>
-      <td class="num"><strong>${Math.round(row.stature).toLocaleString()}</strong></td>
+      <td class="num"><strong>${row.stature.toFixed(2)}</strong></td>
     `;
+    if (row.name === selectedPlayer) tr.classList.add("selected");
     tbody.appendChild(tr);
   }
 }
 
 function initTableSorting() {
-  const headers = document.querySelectorAll("#summary-table th[data-key]");
-  headers.forEach(th => {
+  const thByKey = new Map(
+    [...document.querySelectorAll("#summary-table th[data-key]")]
+      .map(th => [th.dataset.key, th])
+  );
+
+  thByKey.forEach((th, key) => {
     th.addEventListener("click", () => {
-      const key = th.dataset.key;
       if (sortKey === key) {
         sortDir = -sortDir;
         th.className = sortDir === 1 ? "sort-asc" : "sort-desc";
       } else {
-        if (sortKey) {
-          document.querySelector(`th[data-key="${sortKey}"]`).className = "";
-        }
+        if (sortKey) thByKey.get(sortKey).className = "";
         sortKey = key;
         sortDir = 1;
         th.className = "sort-asc";
@@ -308,30 +371,27 @@ function initTableSorting() {
       renderTable();
     });
   });
+
+  document.querySelector("#summary-table tbody").addEventListener("click", e => {
+    const tr = e.target.closest("tr");
+    if (tr?.dataset.player) selectPlayer(tr.dataset.player);
+  });
 }
 
 // ── Main render ────────────────────────────────────────────────────────────
 function renderAll(data) {
-  destroyCharts();
-
+  selectedPlayer = null;
   const rows = data.rows;
-  const { holderOrder, holderStats } = computeMetrics(rows);
+  const { gap, holderOrder, holderStats } = computeMetrics(rows);
+  currentGap = gap;
 
   drawAreaChart(rows);
-
-  const gaps    = holderOrder.map(h => holderStats[h].cumulativeGap);
-  const climbs  = holderOrder.map(h => holderStats[h].cumulativeClimb);
-  const actives = holderOrder.map(h => holderStats[h].activeYears);
-
-  drawBarChart("chart-gap",    holderOrder, gaps,    "Stature of Record (Cumulative Gap)",    "Cumulative Gap");
-  drawBarChart("chart-climb",  holderOrder, climbs,  "Climb Over Previous Record",            "Cumulative Climb");
-  drawBarChart("chart-active", holderOrder, actives, "Active Years Holding the Record",       "Active Years");
 
   tableData = holderOrder.map(h => holderStats[h]);
   sortKey = null;
   sortDir = 1;
   document.querySelectorAll("#summary-table th[data-key]").forEach(th => {
-    th.className = "";
+    th.classList.remove("sort-asc", "sort-desc");
   });
   renderTable();
 }
@@ -374,6 +434,7 @@ async function loadIndex() {
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
+  tooltipEl = document.getElementById("chart-tooltip");
   initTableSorting();
 
   const index = await loadIndex();
