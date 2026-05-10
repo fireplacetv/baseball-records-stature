@@ -21,6 +21,32 @@ const DATASET_LINE = 0;   // career record line
 const DATASET_BAR  = 1;   // active leader bars
 const DEFAULT_LINE_COLOR = "rgba(20,20,20,0.75)";
 
+// ── Minor year-tick plugin ─────────────────────────────────────────────────
+// Draws small 4px ticks at every non-decade year on the x-axis
+const yearTicksPlugin = {
+  id: "yearTicks",
+  afterDraw(chart) {
+    const xAxis = chart.scales.x;
+    if (!xAxis) return;
+    const ctx = chart.ctx;
+    const y0 = xAxis.bottom;
+    ctx.save();
+    ctx.strokeStyle = "rgba(26,26,24,0.3)";
+    ctx.lineWidth = 0.75;
+    const minYr = Math.ceil(xAxis.min);
+    const maxYr = Math.floor(xAxis.max);
+    for (let yr = minYr; yr <= maxYr; yr++) {
+      if (yr % 10 === 0) continue;
+      const x = xAxis.getPixelForValue(yr);
+      ctx.beginPath();
+      ctx.moveTo(x, y0);
+      ctx.lineTo(x, y0 + 4);
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
+};
+
 // Bar opacity (hex alpha suffix appended to color)
 const ALPHA_SELECTED = "ff";   // selected player
 const ALPHA_DIMMED   = "1a";   // non-selected when something is selected
@@ -324,7 +350,7 @@ function lineDatasetConfig(rows) {
   return {
     type: "line",
     label: "Career Record",
-    data: rows.map(r => r.career_record),
+    data: rows.map(r => ({ x: r.year, y: r.career_record })),
     fill: false,
     borderColor: DEFAULT_LINE_COLOR,
     borderWidth: 2.5,
@@ -339,9 +365,10 @@ function barDatasetConfig(rows, barBg) {
   return {
     type: "bar",
     label: "Active Leader",
-    data: rows.map(r => r.active_leader_total),
+    data: rows.map(r => ({ x: r.year, y: r.active_leader_total })),
     backgroundColor: barBg,
     borderWidth: 0,
+    barPercentage: 0.9,
     order: 1,
   };
 }
@@ -375,13 +402,18 @@ function areaChartOptions() {
     },
     scales: {
       x: {
-        grid: { color: "rgba(0,0,0,0.06)" },
-        afterBuildTicks(axis) {
-          axis.ticks = axis.ticks.filter(t =>
-            axis.chart.data.labels[t.value] % 10 === 0
-          );
+        type: "linear",
+        min: 1870,
+        offset: false,
+        grid: {
+          offset: false,
+          color: "rgba(0,0,0,0.06)",
         },
-        ticks: { font: { size: 11 } },
+        ticks: {
+          stepSize: 10,
+          font: { size: 11 },
+          callback: v => v.toString(),
+        },
       },
       y: {
         grid: { color: "rgba(0,0,0,0.06)" },
@@ -395,9 +427,8 @@ function areaChartOptions() {
 }
 
 function updateAreaChart(chart, rows, barBg) {
-  chart.data.labels = rows.map(r => r.year);
-  chart.data.datasets[DATASET_LINE].data = rows.map(r => r.career_record);
-  chart.data.datasets[DATASET_BAR].data = rows.map(r => r.active_leader_total);
+  chart.data.datasets[DATASET_LINE].data = rows.map(r => ({ x: r.year, y: r.career_record }));
+  chart.data.datasets[DATASET_BAR].data = rows.map(r => ({ x: r.year, y: r.active_leader_total }));
   chart.data.datasets[DATASET_BAR].backgroundColor = barBg;
   chart.update();
 }
@@ -416,10 +447,10 @@ function drawAreaChart(rows) {
   charts.area = new Chart(ctx, {
     type: "bar",
     data: {
-      labels: rows.map(r => r.year),
       datasets: [lineDatasetConfig(rows), barDatasetConfig(rows, barBg)],
     },
     options: areaChartOptions(),
+    plugins: [yearTicksPlugin],
   });
 }
 
