@@ -2,7 +2,7 @@
 
 A static web page that visualizes the **stature** of all-time career baseball records over time. Select a stat from the dropdown; four charts and a summary table redraw to show how imposing the record was, year by year, and how each record holder compares.
 
-**Live site:** `https://fireplacetv.github.io/baseball-records-stature/`
+**Live site:** [`https://fireplacetv.github.io/baseball-records-stature/`](https://fireplacetv.github.io/baseball-records-stature/)
 
 ---
 
